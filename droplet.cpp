@@ -119,28 +119,113 @@ namespace{
 
     class FunctionAST {
         std::unique_ptr<PrototypeAST> Proto;
-        std::unique_ptr<PrototypeAST> Body;
+        std::unique_ptr<ExprAST> Body;
 
         public:
             FunctionAST(std::unique_ptr<PrototypeAST> Proto, std::unique_ptr<ExprAST> Body) : Proto(std::move(Proto)), Body(std::move(Body)) {}
     };
+}
 
-    static int curTok;
-    static int getNextToken(){
-        return curTok = gettok();
-    }
+static int curTok;
+static int getNextToken(){
+    return curTok = gettok();
+}
 
-    std::unique_ptr<ExprAST> LogError(const char *Str){
-        fprintf(stderr, "Error %s\n", Str);
+std::unique_ptr<ExprAST> LogError(const char *Str){
+    fprintf(stderr, "Error %s\n", Str);
+    return nullptr;
+}
+std::unique_ptr<PrototypeAST> LogErrorP(const char *Str){
+    LogError(Str);
+    return nullptr;
+}
+
+static std::unique_ptr<ExprAST> ParseNumberExpr(){
+    auto Result = std::make_unique<NumberExprAST>(numVal);
+    getNextToken();
+    return std::move(Result);
+}
+
+static std::unique_ptr<ExprAST> ParseExpression();
+static std::unique_ptr<ExprAST> ParseParenExpr(){
+    getNextToken();
+    auto V = ParseExpression();
+    if (!V){
         return nullptr;
     }
-    std::unique_ptr<PrototypeAST> LogErrorP(const char *Str){
-        LogError(Str);
-        return nullptr;
-    }
 
-    static std::unique_ptr<ExprAST> ParseNumberExpr(){
-        auto Result = std::make_unique<NumberExprAST>(NumVal);
+    if (curTok != ')'){
+        return LogError("expected ')'");
+        getNextToken();
+        return V;
     }
 }
 
+static std::unique_ptr<ExprAST> ParseIdentifierExpr(){
+    std::string IdName = IdStr;
+
+    getNextToken();
+
+    if (curTok != '('){
+        return std::make_unique<VariableExprAST>(IdName);
+    }
+
+    getNextToken();
+    std::vector<std::unique_ptr<ExprAST>> Args;
+    if(curTok != ')'){
+        while (true){
+            if (auto Arg = ParseExpression()){
+                Args.push_back(std::move(Arg));
+            }
+            else{
+                return nullptr;
+            }
+            if (curTok == ')'){
+                break;
+            }
+            if(curTok != ','){
+                return LogError("Expected ')' or ',' in arg list");
+            }
+            getNextToken();
+        }
+    }
+    getNextToken();
+
+    return std::make_unique<CallExprAST>(IdName, std::move(Args));
+}
+
+static std::unique_ptr<ExprAST> ParsePrimary(){
+    switch (curTok){
+        default:
+            return LogError("unknown token when expecting an expression");
+        case tok_identifier:
+            return ParseIdentifierExpr();
+        case tok_number:
+            return ParseNumberExpr();
+        case '(':
+            return ParseParenExpr();
+    }
+}
+
+static std::map<char, int> BinopPrecendence;
+
+static int GetTokPrecedence(){
+    if(!isascii(curTok)){
+        return -1;
+    }
+
+    int TokPrec = BinopPrecendence[curTok];
+    if (TokPrec <= 0){
+        return -1;
+    }
+    return TokPrec;
+}
+
+int main(){
+    BinopPrecendence['<'] = 10;
+    BinopPrecendence['>'] = 10;
+    BinopPrecendence['+'] = 20;
+    BinopPrecendence['-'] = 20;
+    BinopPrecendence['*'] = 40;
+    BinopPrecendence['/'] = 40;
+}
