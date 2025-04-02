@@ -221,6 +221,139 @@ static int GetTokPrecedence(){
     return TokPrec;
 }
 
+static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LHS){
+    while(true){
+        int TokPrec = GetTokPrecedence();
+        if(TokPrec < ExprPrec){
+            return LHS;
+        }
+
+        int BinOp = curTok;
+        getNextToken();
+        auto RHS = ParsePrimary();
+        if(!RHS){
+            return nullptr;
+        }
+
+        int NextPrec = GetTokPrecedence();
+        if(TokPrec < NextPrec){
+            RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS));
+            if (!RHS){
+                return nullptr;
+            }
+        }
+
+        LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
+    }
+}
+
+
+static std::unique_ptr<ExprAST> ParseExpression(){
+    auto LHS = ParsePrimary();
+    if(!LHS){
+        return nullptr;
+    }
+
+    return ParseBinOpRHS(0, std::move(LHS));
+}
+
+static std::unique_ptr<PrototypeAST> ParsePrototype(){
+    if(curTok != tok_identifier){
+        return LogErrorP("expected function name in prototype");
+    }
+
+    std::string FnName = IdStr;
+    getNextToken();
+
+    if(curTok != '('){
+        return LogErrorP("expected '(' in prototype");
+    }
+
+    std::vector<std::string> ArgNames;
+    while (getNextToken() == tok_identifier){
+        ArgNames.push_back(IdStr);
+    }
+    if (curTok != ')')
+    {
+        return LogErrorP("expected ')' in prototype");
+    }
+
+    getNextToken();
+    
+    return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames));
+}
+
+static std::unique_ptr<FunctionAST> ParseDefinition(){
+    getNextToken();
+    auto Proto = ParsePrototype();
+    if(!Proto) return nullptr;
+
+    if(auto E = ParseExpression()){
+        return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+    }
+    return nullptr;
+}
+
+static std::unique_ptr<PrototypeAST> ParseExtern(){
+    getNextToken();
+    return ParsePrototype();
+}
+
+static std::unique_ptr<FunctionAST> ParseTopLevelExpr(){
+    if(auto E = ParseExpression()){
+        auto Proto = std::make_unique<PrototypeAST>("", std::vector<std::string>());
+        return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+    }
+    return nullptr;
+}
+
+static void HandleDefinition() {
+    if (ParseDefinition()) {
+      fprintf(stderr, "Parsed a function definition.\n");
+    } else {
+      getNextToken();
+    }
+  }
+  
+  static void HandleExtern() {
+    if (ParseExtern()) {
+      fprintf(stderr, "Parsed an extern\n");
+    } else {
+      getNextToken();
+    }
+  }
+  
+  static void HandleTopLevelExpression() {
+    if (ParseTopLevelExpr()) {
+      fprintf(stderr, "Parsed a top-level expr\n");
+    } else {
+      getNextToken();
+    }
+  }
+
+  static void MainLoop() {
+    while (true) {
+      fprintf(stderr, "ready> ");
+      switch (curTok) {
+      case tok_eof:
+        return;
+      case ';': 
+        getNextToken();
+        break;
+      case tok_def:
+        HandleDefinition();
+        break;
+      case tok_extern:
+        HandleExtern();
+        break;
+      default:
+        HandleTopLevelExpression();
+        break;
+      }
+    }
+  }
+
+
 int main(){
     BinopPrecendence['<'] = 10;
     BinopPrecendence['>'] = 10;
@@ -228,4 +361,11 @@ int main(){
     BinopPrecendence['-'] = 20;
     BinopPrecendence['*'] = 40;
     BinopPrecendence['/'] = 40;
+
+
+    fprintf(stderr, "ready>");
+    getNextToken();
+
+    MainLoop();
+    return 0;
 }
