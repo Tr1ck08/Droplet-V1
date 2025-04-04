@@ -6,6 +6,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+//#include <llvm/IR/Value.h>
+
 
 enum Token {
     tok_eof = -1,
@@ -33,7 +35,7 @@ static int gettok(){
             IdStr += lastChar;
         }
 
-        if(IdStr == "droplet"){
+        if(IdStr == "def"){
             return tok_def;
         }
         if(IdStr == "extern"){
@@ -50,7 +52,7 @@ static int gettok(){
         }
         while(isdigit(lastChar) || lastChar == '.');
         
-        numVal = strtod(numStr.c_str(),0);
+        numVal = strtod(numStr.c_str(),nullptr);
         return tok_number;
     }
 
@@ -63,7 +65,7 @@ static int gettok(){
         if (lastChar != EOF){
             return gettok();
         }
-
+    }
         if (lastChar == EOF){
             return tok_eof;            
         }
@@ -71,19 +73,20 @@ static int gettok(){
         int thisChar = lastChar;
         lastChar = getchar();
         return thisChar;
-    }
 }
 
 namespace{
     class ExprAST {
         public:
             virtual ~ExprAST() = default;
+            //virtual Value *codegen() = 0;
     };
 
     class NumberExprAST : public ExprAST{
         double Val;
         public: 
             NumberExprAST(double Val) : Val(Val) {}
+            //Value *codegen() override
     };
 
     class VariableExprAST : public ExprAST {
@@ -156,9 +159,11 @@ static std::unique_ptr<ExprAST> ParseParenExpr(){
 
     if (curTok != ')'){
         return LogError("expected ')'");
-        getNextToken();
-        return V;
+
     }
+
+    getNextToken();
+    return V;
 }
 
 static std::unique_ptr<ExprAST> ParseIdentifierExpr(){
@@ -207,14 +212,14 @@ static std::unique_ptr<ExprAST> ParsePrimary(){
     }
 }
 
-static std::map<char, int> BinopPrecendence;
+static std::map<char, int> BinopPrecedence;
 
 static int GetTokPrecedence(){
     if(!isascii(curTok)){
         return -1;
     }
 
-    int TokPrec = BinopPrecendence[curTok];
+    int TokPrec = BinopPrecedence[curTok];
     if (TokPrec <= 0){
         return -1;
     }
@@ -251,7 +256,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<Expr
 static std::unique_ptr<ExprAST> ParseExpression(){
     auto LHS = ParsePrimary();
     if(!LHS){
-        return nullptr;
+        return nullptr; 
     }
 
     return ParseBinOpRHS(0, std::move(LHS));
@@ -286,7 +291,9 @@ static std::unique_ptr<PrototypeAST> ParsePrototype(){
 static std::unique_ptr<FunctionAST> ParseDefinition(){
     getNextToken();
     auto Proto = ParsePrototype();
-    if(!Proto) return nullptr;
+    if(!Proto){
+        return nullptr;
+    }
 
     if(auto E = ParseExpression()){
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
@@ -301,7 +308,7 @@ static std::unique_ptr<PrototypeAST> ParseExtern(){
 
 static std::unique_ptr<FunctionAST> ParseTopLevelExpr(){
     if(auto E = ParseExpression()){
-        auto Proto = std::make_unique<PrototypeAST>("", std::vector<std::string>());
+        auto Proto = std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::string>());
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
     }
     return nullptr;
@@ -310,6 +317,7 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr(){
 static void HandleDefinition() {
     if (ParseDefinition()) {
       fprintf(stderr, "Parsed a function definition.\n");
+      getNextToken();
     } else {
       getNextToken();
     }
@@ -318,6 +326,7 @@ static void HandleDefinition() {
   static void HandleExtern() {
     if (ParseExtern()) {
       fprintf(stderr, "Parsed an extern\n");
+      getNextToken();
     } else {
       getNextToken();
     }
@@ -326,6 +335,7 @@ static void HandleDefinition() {
   static void HandleTopLevelExpression() {
     if (ParseTopLevelExpr()) {
       fprintf(stderr, "Parsed a top-level expr\n");
+      getNextToken();
     } else {
       getNextToken();
     }
@@ -349,18 +359,18 @@ static void HandleDefinition() {
       default:
         HandleTopLevelExpression();
         break;
-      }
+      } 
     }
   }
 
 
 int main(){
-    BinopPrecendence['<'] = 10;
-    BinopPrecendence['>'] = 10;
-    BinopPrecendence['+'] = 20;
-    BinopPrecendence['-'] = 20;
-    BinopPrecendence['*'] = 40;
-    BinopPrecendence['/'] = 40;
+    BinopPrecedence['<'] = 10;
+    //BinopPrecedence['>'] = 10;
+    BinopPrecedence['+'] = 20;
+    BinopPrecedence['-'] = 20;
+    BinopPrecedence['*'] = 40;
+    //BinopPrecedence['/'] = 40;
 
 
     fprintf(stderr, "ready>");
